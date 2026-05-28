@@ -8,6 +8,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -34,20 +35,27 @@ public class VentaService {
         String correo = SecurityContextHolder.getContext().getAuthentication().getName();
         Usuario usuario = usuarioRepository.findByCorreo(correo).orElse(null);
 
-        Venta venta = Venta.builder().fecha(LocalDateTime.now()).usuario(usuario).build();
+        Venta venta = Venta.builder()
+                .fecha(LocalDateTime.now())
+                .usuario(usuario)
+                .build();
+
         List<DetalleVenta> detalles = new ArrayList<>();
-        BigDecimal total = BigDecimal.ZERO;
+        BigDecimal totalSinDescuento = BigDecimal.ZERO;
 
         for (VentaDTO.DetalleRequest dr : request.getDetalles()) {
             Producto producto = productoRepository.findById(dr.getProductoId())
                     .orElseThrow(() -> new RuntimeException("Producto no encontrado: " + dr.getProductoId()));
+
             if (producto.getStock() < dr.getCantidad())
                 throw new RuntimeException("Stock insuficiente para: " + producto.getNombre()
                         + ". Disponible: " + producto.getStock());
 
+            // Descontar stock
             producto.setStock(producto.getStock() - dr.getCantidad());
             productoRepository.save(producto);
 
+            // Registrar movimiento de inventario
             movimientoRepository.save(MovimientoInventario.builder()
                     .producto(producto)
                     .tipoMovimiento(MovimientoInventario.TipoMovimiento.SALIDA)
@@ -55,8 +63,9 @@ public class VentaService {
                     .descripcion("Venta registrada")
                     .build());
 
-            BigDecimal subtotal = producto.getPrecio().multiply(BigDecimal.valueOf(dr.getCantidad()));
-            total = total.add(subtotal);
+            BigDecimal subtotal = producto.getPrecio()
+                    .multiply(BigDecimal.valueOf(dr.getCantidad()));
+            totalSinDescuento = totalSinDescuento.add(subtotal);
 
             detalles.add(DetalleVenta.builder()
                     .venta(venta)
@@ -67,8 +76,23 @@ public class VentaService {
                     .build());
         }
 
-        venta.setTotal(total);
+        // Calcular descuento
+        int porcentaje = (request.getDescuentoPorcentaje() != null) ? request.getDescuentoPorcentaje() : 0;
+        BigDecimal descuento = BigDecimal.ZERO;
+        BigDecimal totalFinal = totalSinDescuento;
+
+        if (porcentaje > 0 && porcentaje <= 100) {
+            descuento = totalSinDescuento
+                    .multiply(BigDecimal.valueOf(porcentaje))
+                    .divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
+            totalFinal = totalSinDescuento.subtract(descuento);
+        }
+
+        venta.setTotalSinDescuento(totalSinDescuento);
+        venta.setDescuento(descuento);
+        venta.setTotal(totalFinal);
         venta.setDetalles(detalles);
+
         return ventaRepository.save(venta);
     }
 
@@ -76,9 +100,9 @@ public class VentaService {
         LocalDateTime inicio = LocalDateTime.now().toLocalDate().atStartOfDay();
         BigDecimal ventasHoy = ventaRepository.sumTotalByFechaBetween(inicio, inicio.plusDays(1));
         return Map.of(
-            "ventasHoy", ventasHoy != null ? ventasHoy : BigDecimal.ZERO,
-            "totalVentas", ventaRepository.count(),
-            "recientes", ventaRepository.findTop10ByOrderByFechaDesc()
+                "ventasHoy", ventasHoy != null ? ventasHoy : BigDecimal.ZERO,
+                "totalVentas", ventaRepository.count(),
+                "recientes", ventaRepository.findTop10ByOrderByFechaDesc()
         );
     }
 }

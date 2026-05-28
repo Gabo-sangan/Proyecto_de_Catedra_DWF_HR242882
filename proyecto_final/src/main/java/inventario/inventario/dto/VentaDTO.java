@@ -1,8 +1,6 @@
 package inventario.inventario.dto;
 
-import jakarta.validation.constraints.Min;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import jakarta.validation.constraints.*;
 import lombok.Data;
 import java.util.List;
 
@@ -12,6 +10,11 @@ public class VentaDTO {
     public static class VentaRequest {
         @NotNull @Size(min = 1)
         private List<DetalleRequest> detalles;
+
+        // Porcentaje de descuento: 0 = sin descuento, 10 = 10%, etc.
+        @Min(value = 0, message = "El descuento no puede ser negativo")
+        @Max(value = 100, message = "El descuento no puede superar el 100%")
+        private Integer descuentoPorcentaje = 0;
     }
 
     @Data

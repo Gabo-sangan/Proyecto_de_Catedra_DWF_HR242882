@@ -11,12 +11,21 @@ import java.util.List;
 @Table(name = "ventas")
 @Data @NoArgsConstructor @AllArgsConstructor @Builder
 public class Venta {
+
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false)
     @Builder.Default
     private LocalDateTime fecha = LocalDateTime.now();
+
+    @Column(name = "total_sin_descuento", precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal totalSinDescuento = BigDecimal.ZERO;
+
+    @Column(nullable = false, precision = 10, scale = 2)
+    @Builder.Default
+    private BigDecimal descuento = BigDecimal.ZERO;
 
     @Column(nullable = false, precision = 10, scale = 2)
     @Builder.Default
